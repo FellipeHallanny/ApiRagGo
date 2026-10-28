@@ -9,6 +9,8 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20%7C%20pgvector-336791?style=flat-square&logo=postgresql)](https://github.com/pgvector/pgvector)
 [![Google Gemini](https://img.shields.io/badge/Gemini-text--embedding--004-4285F4?style=flat-square&logo=google)](https://ai.google.dev/)
 
+**English** • **[Português (Brasil)](README.pt-BR.md)**
+
 [Features](#features) • [Architecture](#architecture) • [Prerequisites](#prerequisites) • [Configuration](#configuration) • [Getting Started](#getting-started) • [API Reference](#api-reference) • [Testing](#testing)
 
 </div>
@@ -280,5 +282,6 @@ ApiRagGo/
 ├── go.mod                       # Go module dependencies
 ├── go.sum                       # Go module checksums
 ├── init.sql                     # Database schema and HNSW index definition
-└── README.md                    # Project documentation
+├── README.md                    # Project documentation (English)
+└── README.pt-BR.md              # Project documentation (Portuguese)
 ```
