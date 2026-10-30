@@ -1,0 +1,67 @@
+﻿syntax = "proto3";
+
+package rag.v1;
+
+option go_package = "Api_Rag/gen/rag/v1;ragv1";
+
+service AlbumService {
+  rpc GetAlbums (GetAlbumsRequest) returns (GetAlbumsResponse);
+  rpc GetAlbumByID (GetAlbumByIDRequest) returns (GetAlbumByIDResponse);
+  rpc CreateAlbum (CreateAlbumRequest) returns (CreateAlbumResponse);
+  rpc SearchSimilar (SearchSimilarRequest) returns (SearchSimilarResponse);
+  rpc SearchSimilarStream (SearchSimilarRequest) returns (stream SearchSimilarChunk);
+}
+
+message Album {
+  string id = 1;
+  string title = 2;
+  string artist = 3;
+  double price = 4;
+  string description = 5;
+  repeated float embedding = 6;
+}
+
+message CreateAlbumRequest {
+  string title = 1;
+  string artist = 2;
+  double price = 3;
+  string description = 4;
+  repeated float embedding = 5;
+}
+
+message CreateAlbumResponse {
+  Album album = 1;
+}
+
+message GetAlbumsRequest {}
+
+message GetAlbumsResponse {
+  repeated Album albums = 1;
+}
+
+message GetAlbumByIDRequest {
+  string id = 1;
+}
+
+message GetAlbumByIDResponse {
+  Album album = 1;
+}
+
+message SearchSimilarRequest {
+  string query = 1;
+  int32 limit = 2;
+  double min_similarity = 3;
+}
+
+message AlbumSearchResult {
+  Album album = 1;
+  double similarity = 2;
+}
+
+message SearchSimilarResponse {
+  repeated AlbumSearchResult results = 1;
+}
+
+message SearchSimilarChunk {
+  AlbumSearchResult result = 1;
+}

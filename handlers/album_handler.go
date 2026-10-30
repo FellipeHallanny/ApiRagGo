@@ -2,47 +2,41 @@ package handlers
 
 import (
 	"Api_Rag/models"
-	"Api_Rag/services/gemini"
-	"Api_Rag/store"
-	"fmt"
+	"Api_Rag/services"
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
 
 type AlbumHandler struct {
-	store         *store.AlbumStore
-	geminiService *gemini.EmbeddingService
+	service *services.AlbumService
 }
 
-func NewAlbumHandler(store *store.AlbumStore, geminiService *gemini.EmbeddingService) *AlbumHandler {
+func NewAlbumHandler(service *services.AlbumService) *AlbumHandler {
 	return &AlbumHandler{
-		store:         store,
-		geminiService: geminiService,
+		service: service,
 	}
 }
 
 func (h *AlbumHandler) GetAlbums(c *gin.Context) {
-	albums, err := h.store.GetAll(c.Request.Context())
+	albums, err := h.service.GetAll(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-	if albums == nil {
-		albums = []models.Album{}
 	}
 	c.JSON(http.StatusOK, albums)
 }
 
 func (h *AlbumHandler) GetAlbumByID(c *gin.Context) {
 	id := c.Param("id")
-	album, err := h.store.GetByID(c.Request.Context(), id)
+	album, err := h.service.GetByID(c.Request.Context(), id)
 	if err != nil {
+		if errors.Is(err, services.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "album not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if album == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "album not found"})
 		return
 	}
 	c.JSON(http.StatusOK, album)
@@ -55,23 +49,13 @@ func (h *AlbumHandler) PostAlbums(c *gin.Context) {
 		return
 	}
 
-	// Se o embedding não foi enviado pelo cliente e temos o serviço Gemini ativo, geramos automaticamente
-	if len(album.Embedding.Slice()) == 0 && h.geminiService != nil {
-		textToEmbed := fmt.Sprintf("Título: %s. Artista: %s. Descrição: %s", album.Title, album.Artist, album.Description)
-		emb, err := h.geminiService.GenerateEmbedding(c.Request.Context(), textToEmbed)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("erro ao gerar embedding: %v", err)})
-			return
-		}
-		album.Embedding = emb
-	}
-
-	if err := h.store.Create(c.Request.Context(), album); err != nil {
+	created, err := h.service.Create(c.Request.Context(), album)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusCreated, album)
+	c.JSON(http.StatusCreated, created)
 }
 
 type SearchRequest struct {
@@ -88,25 +72,10 @@ func (h *AlbumHandler) SearchSimilar(c *gin.Context) {
 		return
 	}
 
-	if h.geminiService == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "serviço Gemini não está configurado"})
-		return
-	}
-
-	queryVector, err := h.geminiService.GenerateEmbedding(c.Request.Context(), req.Query)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("erro ao gerar embedding da consulta: %v", err)})
-		return
-	}
-
-	results, err := h.store.SearchSimilar(c.Request.Context(), queryVector, req.Limit, req.MinSimilarity)
+	results, err := h.service.SearchSimilar(c.Request.Context(), req.Query, req.Limit, req.MinSimilarity)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-
-	if results == nil {
-		results = []models.AlbumSearchResult{}
 	}
 
 	c.JSON(http.StatusOK, results)
