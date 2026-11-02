@@ -2,77 +2,104 @@
 
 # ApiRagGo
 
-*API REST de alta performance para busca semântica e RAG construída com Go, Gin, PostgreSQL (pgvector) e Google Gemini.*
+*API multi-transporte de alta performance para busca semântica e RAG construída com Go, PostgreSQL (pgvector) e Google Gemini.*
 
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go)](https://golang.org)
+[![gRPC](https://img.shields.io/badge/gRPC-v1.68-244c5a?style=flat-square&logo=grpc)](https://grpc.io)
 [![Gin Framework](https://img.shields.io/badge/Gin-v1.12-00ADD8?style=flat-square)](https://gin-gonic.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20%7C%20pgvector-336791?style=flat-square&logo=postgresql)](https://github.com/pgvector/pgvector)
 [![Google Gemini](https://img.shields.io/badge/Gemini-text--embedding--004-4285F4?style=flat-square&logo=google)](https://ai.google.dev/)
+[![Model Context Protocol](https://img.shields.io/badge/MCP-Protocol-purple?style=flat-square)](https://modelcontextprotocol.io)
 
 **[English](README.md)** • **Português (Brasil)**
 
-[Funcionalidades](#funcionalidades) • [Arquitetura](#arquitetura) • [Pré-requisitos](#pré-requisitos) • [Configuração](#configuração) • [Como Começar](#como-começar) • [Referência da API](#referência-da-api) • [Testes](#testes)
+[Funcionalidades](#funcionalidades) • [Arquitetura](#arquitetura) • [Pré-requisitos](#pré-requisitos) • [Configuração](#configuração) • [Como Começar](#como-começar) • [Referência da API & Protocolos](#referência-da-api--protocolos) • [Testes](#testes) • [Estrutura do Projeto](#estrutura-do-projeto)
 
 </div>
 
 ---
 
-**ApiRagGo** é uma API REST desenvolvida em Go e Gin, projetada para busca semântica e recuperação de informações no padrão RAG (Retrieval-Augmented Generation) sobre catálogos de álbuns musicais. O projeto utiliza o **PostgreSQL com a extensão pgvector** para busca vetorial de alta performance por vizinhos mais próximos (ANN) via índice HNSW, integrando-se à API do **Google Gemini** para geração de embeddings vetoriais de 768 dimensões.
+**ApiRagGo** é um backend multi-protocolo de alta performance desenvolvido em Go para busca semântica e recuperação vetorial no padrão RAG (Retrieval-Augmented Generation) sobre catálogos de álbuns musicais. O projeto utiliza o **PostgreSQL com a extensão pgvector** para busca por vizinhos mais próximos (ANN) com índice HNSW, integrando-se ao **Google Gemini** para geração de embeddings vetoriais de 768 dimensões (`text-embedding-004`).
+
+A aplicação disponibiliza três interfaces operacionais conectadas a uma camada unificada de serviços de domínio:
+- **HTTP / REST**: API rápida em JSON construída com o framework Gin.
+- **gRPC**: Comunicação binária de baixa latência com chamadas unárias, streaming, reflection, interceptors estruturados e health checks.
+- **Model Context Protocol (MCP)**: Integração nativa para agentes de inteligência artificial (Claude Desktop, Cursor, JetBrains AI) com ferramentas, recursos e prompts contextuais.
 
 ## Funcionalidades
 
-- **Busca Semântica & Recuperação Vetorial**: Permite consultas usando linguagem natural. As correspondências são calculadas por similaridade de cosseno diretamente no PostgreSQL.
-- **Pipeline Automático de Embeddings**: Ao cadastrar um álbum contendo apenas título, artista e descrição, a API gera e indexa automaticamente o vetor de 768 dimensões via Google Gemini (`text-embedding-004`).
-- **Descoberta Dinâmica de Modelos**: Identifica dinamicamente os modelos de embedding suportados pela sua chave da API Gemini, com tratamento e normalização dimensional.
-- **Indexação HNSW de Alta Performance**: Utiliza o índice Hierarchical Navigable Small World (`vector_cosine_ops`) do pgvector para buscas com latência de sub-milissegundos.
-- **Filtragem por Limiar de Similaridade**: Parâmetro `min_similarity` configurável para evitar falsos positivos e retornar apenas resultados relevantes.
-- **Arquitetura em Camadas (Clean Architecture)**: Separação clara entre modelos de domínio, repositório de dados, handlers HTTP e serviços de inteligência artificial.
-- **Ambiente Conteinerizado**: `docker-compose.yml` pronto para uso com PostgreSQL 16, pgvector e inicialização automática do esquema via `init.sql`.
+- **Arquitetura Multi-Transporte**: Acesse as funcionalidades de domínio através de REST (`:8080`), gRPC (`:50051`) ou Model Context Protocol (STDIO).
+- **Busca Semântica & Recuperação Vetorial**: Realize consultas em linguagem natural calculando a distância de cosseno diretamente no PostgreSQL.
+- **Pipeline Automático de Embeddings**: Ao cadastrar itens apenas com texto descritivo, a API gera e indexa automaticamente o vetor de 768 dimensões via Google Gemini (`text-embedding-004`).
+- **Indexação HNSW de Baixa Latência**: Utiliza o índice Hierarchical Navigable Small World (`vector_cosine_ops`) do pgvector para buscas na ordem de sub-milissegundos.
+- **Descoberta Dinâmica de Modelos**: Identifica dinamicamente os modelos de embedding suportados pela sua chave Gemini, com normalização de dimensionalidade.
+- **Streaming em gRPC**: Transmissão em tempo real de resultados de busca via `SearchSimilarStream`, reduzindo o tempo para o primeiro token no cliente.
+- **Servidor MCP Completo**: Fornece ferramentas (`search_albums_semantic`, `create_album`, `list_albums`, `get_album_by_id`), recursos (`albums://catalog`) e prompts (`curate_music_by_mood`).
+- **Observabilidade Pronta para Produção**: Logs estruturados em formato JSON (`slog`), recuperação contra pânicos, sondas de saúde padrão (`grpc_health_v1`) e gRPC Server Reflection ativado.
+- **Ambiente Conteinerizado**: `docker-compose.yml` pré-configurado com PostgreSQL 16, pgvector e inicialização automática via `init.sql`.
 
 ## Arquitetura
 
-O diagrama abaixo descreve o fluxo de ingestão e recuperação de dados:
+O diagrama abaixo ilustra a separação entre camadas de transporte, serviços de domínio e armazenamento vetorial:
 
 ```mermaid
 flowchart TD
-    subgraph Ingestao["1. Ingestão de Documentos (POST /albums)"]
-        A[Requisição do Cliente] --> B[Handler Gin]
-        B --> C{Embedding Informado?}
-        C -->|Não| D[Serviço Gemini<br/>text-embedding-004]
-        D -->|Vetor 768d| E[Repositório PostgreSQL]
-        C -->|Sim| E
-        E --> F[(PostgreSQL + pgvector<br/>Índice HNSW)]
+    subgraph Clientes["Clientes & Assistentes de IA"]
+        C_REST[Aplicações Web / Mobile<br/>HTTP REST]
+        C_GRPC[Microsserviços / Evans / grpcurl<br/>gRPC Protobuf]
+        C_MCP[Claude Desktop / Cursor / IDEs<br/>Cliente MCP]
     end
 
-    subgraph Recuperacao["2. Busca Semântica (POST /albums/search)"]
-        G[Consulta em Texto Natural] --> H[Handler Gin]
-        H --> I[Serviço Gemini<br/>text-embedding-004]
-        I -->|Vetor da Consulta| J[Repositório PostgreSQL]
-        J -->|Distância de Cosseno <=> | F
-        F -->|Filtrado por min_similarity| K[Resultados Ranqueados + Score]
-        K --> L[Resposta ao Cliente]
+    subgraph Transportes["Camada de Transporte"]
+        T_REST[Motor Gin<br/>:8080]
+        T_GRPC[Servidor gRPC<br/>:50051]
+        T_MCP[Servidor MCP<br/>JSON-RPC via STDIO]
     end
+
+    subgraph Nucleo["Serviço de Domínio"]
+        SVC[AlbumService<br/>Regras de Negócio e Orquestração]
+    end
+
+    subgraph Externo["Armazenamento & IA"]
+        GEMINI[Serviço Gemini Embeddings<br/>text-embedding-004]
+        STORE[AlbumStore<br/>Repositório SQL pgvector]
+        DB[(PostgreSQL 16 + pgvector<br/>Índice HNSW por Cosseno)]
+    end
+
+    C_REST -->|HTTP / JSON| T_REST
+    C_GRPC -->|Protobuf v3| T_GRPC
+    C_MCP -->|JSON-RPC 2.0| T_MCP
+
+    T_REST --> SVC
+    T_GRPC --> SVC
+    T_MCP --> SVC
+
+    SVC -->|Gera Embeddings| GEMINI
+    SVC -->|Persistência & Busca| STORE
+    STORE -->|Distância de Cosseno <=> | DB
 ```
 
 ## Pré-requisitos
 
-Antes de iniciar, certifique-se de ter instalado:
-
 - [Go](https://go.dev/dl/) (versão 1.22 ou superior)
 - [Docker](https://www.docker.com/products/docker-desktop/) e Docker Compose
-- Uma chave de API do [Google AI Studio (Gemini)](https://aistudio.google.com/)
+- Chave de API do [Google AI Studio (Gemini)](https://aistudio.google.com/)
+- *(Opcional)* [Buf CLI](https://buf.build/docs/installation) (para regeneração de stubs Protobuf)
+- *(Opcional)* [grpcurl](https://github.com/fullstorydev/grpcurl) ou [Evans](https://github.com/ktr0731/evans) (para testes gRPC)
 
 ## Configuração
 
-A aplicação é configurada por meio de variáveis de ambiente:
+A aplicação é configurada por variáveis de ambiente:
 
 | Variável | Descrição | Valor Padrão | Obrigatória |
 |---|---|---|---|
-| `GEMINI_API_KEY` | Chave da API do Google Gemini para geração de embeddings | *Nenhum* | **Sim** (para busca semântica e embeddings automáticos) |
+| `GEMINI_API_KEY` | Chave de API do Google Gemini para embeddings de 768 dimensões | *Nenhum* | **Sim** (para busca semântica e geração automática) |
 | `DATABASE_URL` | String de conexão com o PostgreSQL | `postgres://postgres:postgrespassword@localhost:5432/apirag?sslmode=disable` | Não |
+| `PORT` | Porta de escuta do servidor HTTP REST | `8080` | Não |
+| `GRPC_PORT` | Porta de escuta do servidor gRPC | `50051` | Não |
 
 > [!IMPORTANT]
-> Caso a variável `GEMINI_API_KEY` não seja definida, o servidor iniciará em modo reduzido: as operações CRUD convencionais e inserções com vetores manuais funcionarão normalmente, porém a geração automática de embeddings e a rota `/albums/search` retornarão erro até que a chave seja configurada.
+> Se `GEMINI_API_KEY` não for informada, o servidor iniciará em modo reduzido: as operações CRUD convencionais e inserções com vetores manuais funcionarão normalmente, mas a geração automática e as buscas semânticas retornarão erro até a chave ser definida.
 
 ## Como Começar
 
@@ -85,23 +112,17 @@ cd ApiRagGo
 
 ### 2. Iniciar o PostgreSQL com pgvector
 
-Inicie o container do banco de dados via Docker Compose. O script `init.sql` criará a extensão, a tabela e o índice HNSW automaticamente:
+Inicie o container do banco de dados. O script [`init.sql`](file:///init.sql) ativa o `pgvector`, cria a tabela `albums` e gera o índice HNSW no primeiro boot:
 
 ```bash
 docker compose up -d
 ```
 
-Verifique se o container está ativo:
+### 3. Configurar as Variáveis de Ambiente
 
-```bash
-docker compose ps
-```
+Defina sua chave de API do Gemini no seu terminal:
 
-### 3. Configurar a Chave do Gemini
-
-Defina a variável no terminal antes de iniciar a aplicação:
-
-**Bash / macOS / Linux:**
+**macOS / Linux:**
 ```bash
 export GEMINI_API_KEY="sua-chave-gemini-aqui"
 ```
@@ -116,67 +137,44 @@ $env:GEMINI_API_KEY="sua-chave-gemini-aqui"
 set GEMINI_API_KEY=sua-chave-gemini-aqui
 ```
 
-### 4. Executar o Servidor
+### 4. Iniciar os Servidores (REST + gRPC)
 
-Instale as dependências e inicie a API:
+Inicie o executável que hospeda simultaneamente as portas HTTP e gRPC:
 
 ```bash
 go mod tidy
 go run cmd/api/main.go
 ```
 
-A API estará disponível em `http://localhost:8080`.
+O log indicará a inicialização dos dois serviços:
+```text
+Conexão com PostgreSQL (pgvector) estabelecida!
+Serviço Gemini (text-embedding-004, 768 dimensões) inicializado!
+🚀 Servidor gRPC escutando em :50051 (Reflection e Health ativos)
+🌐 Servidor HTTP REST (Gin) escutando em :8080
+```
 
 > [!TIP]
-> Caso utilize uma instância externa do PostgreSQL, execute os comandos presentes em [`init.sql`](file:///init.sql) para ativar a extensão `vector` e criar o esquema da tabela.
+> O encerramento dos servidores é gracioso (graceful shutdown). Ao pressionar `Ctrl+C`, todas as conexões ativas terminam ordenadamente antes do processo ser finalizado.
 
-## Referência da API
+---
 
-### 1. Listar Todos os Álbuns
+## Referência da API & Protocolos
 
-Retorna a lista com todos os álbuns cadastrados no banco.
+### 1. API HTTP REST (`:8080`)
 
-- **URL**: `GET /albums`
-- **Resposta**: `200 OK`
-
+#### Listar Todos os Álbuns
 ```bash
 curl -X GET http://localhost:8080/albums
 ```
 
-```json
-[
-  {
-    "id": "1",
-    "title": "Blue Train",
-    "artist": "John Coltrane",
-    "price": 56.99,
-    "description": "Álbum seminal de hard bop jazz lançado pela Blue Note em 1957."
-  }
-]
-```
-
----
-
-### 2. Obter Álbum por ID
-
-Busca um registro específico pelo seu identificador.
-
-- **URL**: `GET /albums/:id`
-- **Resposta**: `200 OK` ou `404 Not Found`
-
+#### Obter Álbum por ID
 ```bash
 curl -X GET http://localhost:8080/albums/1
 ```
 
----
-
-### 3. Cadastrar Álbum
-
-Insere um novo álbum. Se o campo `embedding` não for informado no payload, o serviço Gemini gerará automaticamente um vetor de 768 dimensões combinando os campos de título, artista e descrição.
-
-- **URL**: `POST /albums`
-- **Content-Type**: `application/json`
-- **Resposta**: `201 Created`
+#### Cadastrar Álbum
+Se o campo `embedding` for omitido, o vetor de 768 dimensões é gerado automaticamente pelo Gemini a partir de `title`, `artist` e `description`.
 
 ```bash
 curl -X POST http://localhost:8080/albums \
@@ -190,28 +188,8 @@ curl -X POST http://localhost:8080/albums \
   }'
 ```
 
-> [!NOTE]
-> Para fornecer um vetor pré-calculado manualmente, envie a propriedade `embedding` contendo um array de 768 números float.
-
----
-
-### 4. Busca Semântica (Recuperação RAG)
-
-Realiza pesquisa semântica por proximidade vetorial a partir de uma consulta em texto natural.
-
-- **URL**: `POST /albums/search`
-- **Content-Type**: `application/json`
-- **Resposta**: `200 OK`
-
-#### Parâmetros da Requisição
-
-| Campo | Tipo | Descrição | Padrão |
-|---|---|---|---|
-| `query` | string | Pergunta ou texto de busca em linguagem natural | *Obrigatório* |
-| `limit` | integer | Limite máximo de resultados retornados | `5` |
-| `min_similarity` | float | Limiar mínimo de similaridade de cosseno (`0.0` a `1.0`) | `0.60` |
-
-#### Exemplo de Requisição
+#### Busca Semântica (Recuperação RAG)
+Pesquise usando descrições em linguagem natural:
 
 ```bash
 curl -X POST http://localhost:8080/albums/search \
@@ -223,65 +201,196 @@ curl -X POST http://localhost:8080/albums/search \
   }'
 ```
 
-#### Exemplo de Resposta
+---
+
+### 2. API gRPC (`:50051`)
+
+O serviço gRPC está definido em [`proto/rag/v1/album.proto`](file:///proto/rag/v1/album.proto) sob o pacote `rag.v1.AlbumService`.
+
+#### Definição do Serviço
+```protobuf
+service AlbumService {
+  rpc GetAlbums (GetAlbumsRequest) returns (GetAlbumsResponse);
+  rpc GetAlbumByID (GetAlbumByIDRequest) returns (GetAlbumByIDResponse);
+  rpc CreateAlbum (CreateAlbumRequest) returns (CreateAlbumResponse);
+  rpc SearchSimilar (SearchSimilarRequest) returns (SearchSimilarResponse);
+  rpc SearchSimilarStream (SearchSimilarRequest) returns (stream SearchSimilarChunk);
+}
+```
+
+#### Inspecionar via `grpcurl` (Reflection Habilitado)
+
+Listar serviços disponíveis:
+```bash
+grpcurl -plaintext localhost:50051 list
+```
+
+Descrever os métodos do `AlbumService`:
+```bash
+grpcurl -plaintext localhost:50051 describe rag.v1.AlbumService
+```
+
+#### Executar Busca Semântica via gRPC
+```bash
+grpcurl -plaintext -d '{
+  "query": "álbuns de rock progressivo e guitarras psicodélicas",
+  "limit": 3,
+  "min_similarity": 0.60
+}' localhost:50051 rag.v1.AlbumService/SearchSimilar
+```
+
+#### Busca com Streaming de Resultados
+```bash
+grpcurl -plaintext -d '{
+  "query": "improvisações de saxofone no jazz",
+  "limit": 5,
+  "min_similarity": 0.50
+}' localhost:50051 rag.v1.AlbumService/SearchSimilarStream
+```
+
+#### Verificar Sonda de Saúde
+```bash
+grpcurl -plaintext -d '{"service": ""}' localhost:50051 grpc.health.v1.Health/Check
+```
+
+---
+
+### 3. Servidor Model Context Protocol (MCP)
+
+O projeto inclui um executável MCP dedicado que se comunica por `STDIO` via JSON-RPC 2.0. Isso possibilita que assistentes como Claude Desktop, Cursor e extensões de IDE consultem o catálogo diretamente.
+
+#### Compilar o Executável MCP
+
+```bash
+go build -o bin/mcp.exe ./cmd/mcp
+```
+
+#### Configuração de Clientes MCP
+
+Adicione a configuração do ApiRagGo no seu `claude_desktop_config.json` ou nas configurações do Cursor:
 
 ```json
-[
-  {
-    "id": "1",
-    "title": "Blue Train",
-    "artist": "John Coltrane",
-    "price": 56.99,
-    "description": "Álbum seminal de hard bop jazz lançado pela Blue Note em 1957.",
-    "similarity": 0.8241
+{
+  "mcpServers": {
+    "apirag": {
+      "command": "C:\\Projetos\\Go\\ApiRagGo\\bin\\mcp.exe",
+      "args": [],
+      "env": {
+        "DATABASE_URL": "postgres://postgres:postgrespassword@localhost:5432/apirag?sslmode=disable",
+        "GEMINI_API_KEY": "sua-chave-gemini-aqui"
+      }
+    }
   }
-]
+}
 ```
+
+> [!NOTE]
+> Todos os logs e diagnósticos operacionais do servidor MCP são direcionados para `stderr`, preservando o canal `stdout` exclusivamente para o tráfego JSON-RPC do protocolo.
+
+#### Capacidades MCP Registradas
+
+| Tipo | Nome / URI | Descrição |
+|---|---|---|
+| **Tool** | `search_albums_semantic` | Executa busca semântica em linguagem natural com pgvector e Gemini. Argumentos: `query` (obrigatório), `limit` (padrão: 5), `min_similarity` (padrão: 0.60). |
+| **Tool** | `get_album_by_id` | Obtém metadados completos de um álbum pelo seu identificador único. Argumento: `id` (obrigatório). |
+| **Tool** | `list_albums` | Lista todos os álbuns cadastrados no catálogo. |
+| **Tool** | `create_album` | Cadastra novo álbum e gera automaticamente o vetor de 768 dimensões com Gemini. Argumentos: `title`, `artist`, `price`, `description`, `id`. |
+| **Resource** | `albums://catalog` | Recurso dinâmico em JSON contendo o catálogo completo de discos. |
+| **Resource Template** | `albums://{id}` | Template de URI dinâmico para leitura direta dos detalhes de um álbum por ID. |
+| **Prompt** | `curate_music_by_mood` | Orienta o modelo de IA a atuar como curador musical, acionando a busca semântica e gerando recomendações fundamentadas. Argumentos: `mood` (obrigatório), `genre` (opcional). |
+
+---
 
 ## Testes
 
-O projeto inclui um utilitário em `cmd/test_embeddings` para validar a ordenação e filtragem por similaridade utilizando embeddings sintéticos, sem consumir cotas da API remota:
+### Testes Automatizados (gRPC & MCP)
 
-1. Certifique-se de que a API esteja em execução em `localhost:8080`.
-2. Em outro terminal, execute:
+Execute a suíte de testes unitários e de integração das camadas de transporte:
+
+```bash
+go test -v ./transport/...
+```
+
+### Validação com Embeddings Sintéticos
+
+Valide o ranqueamento e o filtro de similaridade vetorial sem consumir cotas da API remota:
 
 ```bash
 go run cmd/test_embeddings/main.go
 ```
 
-O script executa os seguintes passos:
-- Cadastra clusters vetoriais sintéticos (ex.: álbuns de Jazz próximos a ~0.80 e Rock próximos a ~0.10).
-- Dispara uma busca semântica no espaço vetorial de Jazz.
-- Valida se os resultados são devidamente ordenados por relevância e filtrados pelo limiar estipulado.
+### Diagnóstico Local do Protocolo MCP
+
+Teste a conformidade do protocolo MCP, o handshake inicial, invocação de ferramentas, leitura de recursos e obtenção de templates de prompt:
+
+```bash
+go run cmd/test_mcp/main.go
+```
+
+### Regeneração de Código Protobuf
+
+Caso modifique o arquivo [`proto/rag/v1/album.proto`](file:///proto/rag/v1/album.proto), regenere as estruturas Go utilizando o Buf:
+
+```bash
+buf generate
+```
+
+---
 
 ## Estrutura do Projeto
 
 ```text
 ApiRagGo/
 ├── app/
-│   └── app.go                   # Configuração de rotas e injeção de dependências
+│   └── app.go                      # Configuração do router Gin e injeção de dependências
 ├── cmd/
 │   ├── api/
-│   │   └── main.go              # Ponto de entrada do servidor HTTP
-│   └── test_embeddings/
-│       └── main.go              # Utilitário de testes com vetores sintéticos
+│   │   └── main.go                 # Ponto de entrada unificado (Dual-stack HTTP + gRPC)
+│   ├── mcp/
+│   │   └── main.go                 # Ponto de entrada do servidor MCP (STDIO JSON-RPC)
+│   ├── test_embeddings/
+│   │   └── main.go                 # Teste de agrupamento com vetores sintéticos
+│   └── test_mcp/
+│       └── main.go                 # Cliente de teste automatizado para o servidor MCP
 ├── db/
-│   └── db.go                    # Conexão e pool do PostgreSQL
+│   └── db.go                       # Inicialização do pool de conexões do PostgreSQL
+├── gen/
+│   └── rag/v1/                     # Código Protobuf e gRPC gerado
+│       ├── album.pb.go
+│       └── album_grpc.pb.go
 ├── handlers/
-│   └── album_handler.go         # Handlers HTTP e validação de payloads
+│   └── album_handler.go            # Handlers HTTP REST e validação de payloads
 ├── models/
-│   └── album.go                 # Modelos de dados e estruturas de resposta
+│   └── album.go                    # Modelos de domínio e tipos de busca
+├── proto/
+│   └── rag/v1/
+│       └── album.proto             # Definição do serviço e mensagens Protobuf
 ├── routes/
-│   └── routes.go                # Registro e mapeamento de rotas
+│   └── routes.go                   # Mapeamento de rotas HTTP
 ├── services/
+│   ├── album_service.go            # Regras de negócio de domínio compartilhadas
 │   └── gemini/
-│       └── embedding_service.go # Integração com API REST do Google Gemini
+│       └── embedding_service.go    # Integração com a API Google Gemini (text-embedding-004)
 ├── store/
-│   └── album_store.go           # Repositório SQL com pgvector e busca vetorial
-├── docker-compose.yml           # Definição do container PostgreSQL 16 com pgvector
-├── go.mod                       # Módulos e dependências Go
-├── go.sum                       # Checksums de integridade do Go
-├── init.sql                     # Script de criação da extensão pgvector e tabelas
-├── README.md                    # Documentação do projeto (Inglês)
-└── README.pt-BR.md              # Documentação do projeto (Português)
+│   └── album_store.go              # Repositório SQL com pgvector e busca HNSW
+├── transport/
+│   ├── grpc/                       # Implementação da camada gRPC
+│   │   ├── album_server.go         # Implementação dos métodos RPC e streaming
+│   │   ├── server.go               # Configuração do servidor com logging, health e reflection
+│   │   └── server_test.go          # Testes automatizados do servidor gRPC
+│   └── mcp/                        # Implementação do Model Context Protocol
+│       ├── prompts.go              # Registro de prompts contextuais MCP
+│       ├── resources.go            # Registro de recursos e templates de URI
+│       ├── server.go               # Configuração e loop STDIO do servidor MCP
+│       ├── server_test.go          # Testes automatizados do servidor MCP
+│       └── tools.go                # Registro das ferramentas MCP
+├── buf.gen.yaml                    # Configuração de plugins de geração do Buf
+├── buf.yaml                        # Configuração do módulo Buf
+├── docker-compose.yml              # Definição do container PostgreSQL 16 com pgvector
+├── go.mod                          # Módulo e dependências Go
+├── go.sum                          # Checksums de integridade
+├── init.sql                        # Script SQL de inicialização da extensão e índice HNSW
+├── mcp-config.sample.json          # Exemplo de configuração para Claude Desktop e Cursor
+├── README.md                       # Documentação principal (Inglês)
+└── README.pt-BR.md                 # Documentação em Português (Brasil)
 ```
