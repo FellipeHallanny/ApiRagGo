@@ -1,0 +1,12 @@
+﻿{
+  "mcpServers": {
+    "apirag": {
+      "command": "C:\\Projetos\\Go\\Api Rag\\bin\\mcp.exe",
+      "args": [],
+      "env": {
+        "DATABASE_URL": "postgres://postgres:postgrespassword@localhost:5432/apirag?sslmode=disable",
+        "GEMINI_API_KEY": "SUA_CHAVE_GEMINI_AQUI"
+      }
+    }
+  }
+}
